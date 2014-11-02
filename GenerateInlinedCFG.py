@@ -8,6 +8,9 @@ RESULT = "RESULT/" # The directory of inlined-CFG results in a curtain data form
 dict_all_inst = dict()
 dict_all_bb = dict()
 
+dict_call_to_func = dict()
+list_record_func = list()
+
 dict_all_labels = dict() # Record all possible function labels from .nm file 
 dict_all_functions = dict() # Record all functions from .ob file based on the start address
 dict_valid_functions = dict() # Record all valid functions based on abstract execution
@@ -55,7 +58,7 @@ class Instruction:
 			self.jump_to_addr = full_addr(fields[1])
 			self.jump_to_func = fields[2][1:-1]
 		elif (fields[0] == "b"):
-			self.inst_type = 'Unconditonal'
+			self.inst_type = 'Unconditional'
 			self.jump_to_addr = full_addr(fields[1])
 			self.jump_to_func = None
 		elif (fields[0] == "BX"):
@@ -67,7 +70,7 @@ class Instruction:
 			self.jump_to_addr = None
 			self.jump_to_func = None
 		elif (fields[0][0] == 'b' and len(fields[0]) != 1):
-			self.inst_type = 'Conditonal'
+			self.inst_type = 'Conditional'
 			self.jump_to_addr = full_addr(fields[1])
 			self.jump_to_func = None
 		else:
@@ -85,7 +88,8 @@ class BasicBlock:
 		self.start = start
 		self.end = end
 		self.size = size
-		self.jump_to = None
+		self.jump_to_left = None
+		self.jump_to_right = None
 		self.loop_to = None
 		self.call_to = None
 		self.func = func
@@ -111,7 +115,7 @@ class BasicBlock:
 		return self.list_inst
 
 	def get_bb_info(self):
-		bb_info = "Name:%s Function:%s Start:%s End:%s Size:%d jump_to:%s loop_to:%s call_to:%s" % (self.name,self.func.name,self.start,self.end,self.size, self.jump_to,self.loop_to,self.call_to)
+		bb_info = "Name:%s Function:%s Start:%s End:%s Size:%d jump_to_left:%s loop_to:%s call_to:%s" % (self.name,self.func.name,self.start,self.end,self.size, self.jump_to_left,self.loop_to,self.call_to)
 		for inst in self.list_inst:
 			bb_info += "\n" + inst.get_inst_info()
 		return bb_info
@@ -186,15 +190,32 @@ class Function:
 			inst = temp.list_inst[-1]
 			if inst.inst_type == "FuncCall" :
 				temp.call_to = inst.jump_to_addr
-			elif (inst.inst_type == "Unconditional" 
-				or inst.inst_type == "Conditional"):
+				#print temp.call_to
+			elif inst.inst_type == "Unconditional":
+				if not check_hex(inst.jump_to_addr):
+					continue
+
 				if(compare(inst.jump_to_addr,inst.address)):
-					temp.jump_to = inst.jump_to_addr
+					temp.jump_to_left = inst.jump_to_addr
+				else:
+					temp.loop_to_left = inst.jump_to_addr
+
+			elif inst.inst_type == "Conditional":
+				if not check_hex(inst.jump_to_addr):
+					continue
+
+				if(compare(inst.jump_to_addr,inst.address)):
+					temp.jump_to_left = inst.jump_to_addr
 				else:
 					temp.loop_to = inst.jump_to_addr
+				if temp.nextbb != None:
+					temp.jump_to_right = temp.nextbb.name
+
 			else:
 				if (inst.address != self.end):
 					assert temp.nextbb != None
+				if temp.nextbb != None:
+					temp.jump_to_right = temp.nextbb.name
 
 	def get_func_info(self):
 		func_info = "Function:%s Start:%s End:%s Size:%d" % (self.name, self.start, self.end, self.size)
@@ -210,28 +231,45 @@ def output_info(func,f1):
 	f1.write("%s" % func.get_func_info())
 
 def funcDOT(func,f1,f2):
-	output_info(func, f2)
-	for temp in func.get_list_bb():
-		if (temp.nextbb != None):
-			f1.write("	%s -> %s\n" % (temp.name, temp.nextbb.name))
+	#output_info(func, f2)
+	list_func = list()
+	f1.writelines("	subgraph %s {\n" % func.name)
+	f1.writelines("		label=\"%s\";\n" % func.name)
 
-		if (temp.jump_to != None):
-			f1.write("	%s -> %s\n" % (temp.name, temp.jump_to))
+	for temp in func.get_list_bb():
+		#if (temp.nextbb != None):
+		#	f1.write("		\"%s\" -> \"%s\";\n" % (temp.name, temp.nextbb.name))
+		print "%s %s %s" % (temp.name, temp.jump_to_left, temp.jump_to_right)
+		if (temp.jump_to_left != None):
+			f1.write("		bb%s -> bb%s;\n" % (temp.name, temp.jump_to_left))
+
+		if (temp.jump_to_right != None):
+			f1.write("		bb%s -> bb%s;\n" % (temp.name, temp.jump_to_right))
 
 		if (temp.loop_to != None):
-			f1.write("	%s -> %s\n" % (temp.name, temp.loop_to))
+			f1.write("		bb%s -> bb%s;\n" % (temp.name, temp.loop_to))
 
 		if (temp.call_to != None):
-			f1.write("	%s -> %s\n" % (temp.name, dict_all_functions[temp.call_to].name))
-			#generateDOT(dict_all_functions[temp.call_to], f1,f2)
-			f1.write("	%s -> %s\n" % (dict_all_functions[temp.call_to].name,temp.nextbb.name))
+			f1.write("		bb%s -> call_%s;\n" % (temp.name, dict_all_functions[temp.call_to].name))
+			f1.write("		call_%s [shape=polygon];\n" % (dict_all_functions[temp.call_to].name))
+			f1.write("		call_%s -> bb%s;\n" % (dict_all_functions[temp.call_to].name,temp.nextbb.name))
+			list_func.append(dict_all_functions[temp.call_to])
+			dict_call_to_func["call_" + dict_all_functions[temp.call_to].name] = dict_all_functions[temp.call_to]
+	f1.writelines("	}\n")
+
+	list_record_func.append(func)
+	for key in list_func:
+		if not key in list_record_func:
+			funcDOT(key, f1, f2)
 
 		
 def generateDOT(func,file1,file2):
 	f1 = open (file1, "w")
 	f2 = open (file2, "w")
-	f1.write("digraph G {")
+	f1.write("digraph G {\n")
 	funcDOT(func, f1, f2)
+	for key in dict_call_to_func:
+		f1.write("	%s -> bb%s [lhead=%s];\n" % (key, dict_call_to_func[key].start, dict_call_to_func[key].name))
 	f1.writelines("}")
 	f1.close()
 	f2.close()

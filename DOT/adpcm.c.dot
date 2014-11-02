@@ -1,22 +1,32 @@
-digraph G {	"0000a7c4" -> 0000a7d4
-	0000a7c4 -> reset
-	reset -> 0000a7d4
-	0000a7d4 -> 0000a7f0
-	0000a7f0 -> 0000a80c
-	0000a7f0 -> my_cos
-	my_cos -> 0000a80c
-	0000a80c -> 0000a830
-	0000a830 -> 0000a83c
-	0000a83c -> 0000a848
-	0000a848 -> 0000a884
-	0000a848 -> encode
-	encode -> 0000a884
-	0000a884 -> 0000a89c
-	0000a89c -> 0000a8a8
-	0000a8a8 -> 0000a8b4
-	0000a8b4 -> 0000a8d8
-	0000a8b4 -> decode
-	decode -> 0000a8d8
-	0000a8d8 -> 0000a910
-	0000a910 -> 0000a91c
+digraph G {
+	subgraph main {
+		label="main";
+		bb0000a7c4;
+		call_reset;
+		bb0000a7c4 -> call_reset;
+		call_reset [shape=polygon];
+		call_reset -> bb0000a7d4;
+		bb0000a7d4 -> bb0000a830;
+		bb0000a7f0 -> call_my_cos;
+		call_my_cos [shape=polygon];
+		call_my_cos -> bb0000a80c;
+		bb0000a80c -> bb0000a830;
+		bb0000a830 -> bb0000a83c;
+		bb0000a830 -> bb0000a7f0;
+		bb0000a83c -> bb0000a89c;
+		bb0000a848 -> call_encode;
+		call_encode [shape=polygon];
+		call_encode -> bb0000a884;
+		bb0000a884 -> bb0000a89c;
+		bb0000a89c -> bb0000a8a8;
+		bb0000a89c -> bb0000a848;
+		bb0000a8a8 -> bb0000a910;
+		bb0000a8b4 -> call_decode;
+		call_decode [shape=polygon];
+		call_decode -> bb0000a8d8;
+		bb0000a8d8 -> bb0000a910;
+		bb0000a910 -> bb0000a91c;
+		bb0000a910 -> bb0000a8b4;
+	}
+	
 }
