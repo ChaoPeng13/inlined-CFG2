@@ -11,8 +11,7 @@ dict_all_bb = dict()
 dict_all_labels = dict() # Record all possible function labels from .nm file 
 dict_all_functions = dict() # Record all functions from .ob file based on the start address
 dict_valid_functions = dict() # Record all valid functions based on abstract execution
-main_at = None
-program = None
+main_at = list()
 
 TYPES = ["Normal", "Unconditional", "Conditional", "FuncCall", "BX", "BLX"]
 
@@ -20,8 +19,17 @@ def full_addr(address): #Get full 32bit address
 	temp = '00000000'
 	return temp[:8-len(address)]+address
 
+def check_hex(address):
+	alphabet = ['0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f']
+	for k in range(len(address)):
+		if not address[k] in alphabet:
+			return False
+	return True
+
 def prev_inst_addr(address): # The 32bit address of the previous instruction
-	addr = int(address,16) - 4
+	#print address
+	addr = int(address,16)
+	addr = addr - 4
 	addr_str = str('%x' % addr)
 	return full_addr(addr_str)
 
@@ -42,7 +50,7 @@ class Instruction:
 
 	def update_inst(self):
 		fields = self.expr_text.split()
-		if (fields[0][0:2] == 'bl' and dict_all_labels.has_key(full_addr(fields[1])):
+		if (fields[0][0:2] == 'bl' and dict_all_labels.has_key(full_addr(fields[1]))):
 			self.inst_type = 'FuncCall'
 			self.jump_to_addr = full_addr(fields[1])
 			self.jump_to_func = fields[2][1:-1]
@@ -67,7 +75,7 @@ class Instruction:
 
 
 	def get_inst_info(self):
-		inst_info = "Address:%s Function:%s BasicBlock:%s Text:%s" % (address, func.name, bb, expr_text)
+		inst_info = "Address:%s Function:%s BasicBlock:%s Text:%s" % (self.address, self.func.name, self.bb, self.expr_text)
 		return inst_info
 
 
@@ -75,7 +83,7 @@ class BasicBlock:
 	def __init__(self, name, func, start = None, end = None, size = 0):
 		self.name = name
 		self.start = start
-		self.end = self.end
+		self.end = end
 		self.size = size
 		self.jump_to = None
 		self.loop_to = None
@@ -86,20 +94,24 @@ class BasicBlock:
 		self.list_inst = list()
 
 	def add_inst(self,inst):
-		if (len(list_inst)==0):
+		if (len(self.list_inst)==0):
 			self.start = inst.address
 			self.end = inst.address
 
 			self.size = 4
 			self.list_inst.append(inst)
 		else:
-			assert int(self.list_inst[-1].address,16) == int(inst.address,16) - 4
-			self.self.size += 4
+			#assert int(self.list_inst[-1].address,16) == int(inst.address,16) - 4
+			self.size += 4
 			self.end = inst.address
 			self.list_inst.append(inst)
+		assert len(self.list_inst) > 0
+
+	def get_list_inst(self):
+		return self.list_inst
 
 	def get_bb_info(self):
-		bb_info = "Name:%s Function:%s Start:%s End:%s Size:%d Next:%s Next_Left:%s Next_Right:%s" % (name,func.name,start,end,size, next_one,next_left,next_right)
+		bb_info = "Name:%s Function:%s Start:%s End:%s Size:%d jump_to:%s loop_to:%s call_to:%s" % (self.name,self.func.name,self.start,self.end,self.size, self.jump_to,self.loop_to,self.call_to)
 		for inst in self.list_inst:
 			bb_info += "\n" + inst.get_inst_info()
 		return bb_info
@@ -134,22 +146,32 @@ class Function:
 			if inst.inst_type != "Normal":
 				boundaries.append(inst.address)
 				jump_to = inst.jump_to_addr
+				if inst.inst_type == "BX" or inst.inst_type == "BLX":
+					continue
+				if not check_hex(jump_to):
+					continue
+
 				if not dict_all_functions.has_key(jump_to):
+					#print inst.inst_type
 					if not prev_inst_addr(jump_to) in boundaries:
 						boundaries.append(prev_inst_addr(jump_to))
 
 		#Second time traverse list_bb to generate basic blocks of this function
-		bb = BasicBlock(list_inst[0].address, self)
+		bb = BasicBlock(self.list_inst[0].address, self)
 		self.list_bb.append(bb)
+		#print len(self.list_inst)
 		for inst in self.list_inst:
-			bb.add_inst(inst)
-			if inst.address in boundaries:
+			#print inst.address
+			if prev_inst_addr(inst.address) in boundaries:
 				bb = BasicBlock(inst.address, self)
-				list_bb.append(bb)
+				self.list_bb.append(bb)
+			bb.add_inst(inst)
+
+			
 
 		#Generate next basic block for each basic block
 		for k in range(len(self.list_bb)):
-			dict_all_bb[self.list_bb[k].name,self.list_bb[k]]
+			dict_all_bb[self.list_bb[k].name]=self.list_bb[k]
 			if k != len(self.list_bb)-1:
 				self.list_bb[k].nextbb = self.list_bb[k+1]
 
@@ -157,8 +179,10 @@ class Function:
 		#First time traverse list_bb to create links of this function
 		assert len(self.list_bb) != 0
 		for temp in self.list_bb:
-			for inst in temp.list_inst:
+			for inst in temp.get_list_inst():
 				inst.bb = temp
+			#print temp.get_bb_info()
+			assert len(temp.get_list_inst()) > 0
 			inst = temp.list_inst[-1]
 			if inst.inst_type == "FuncCall" :
 				temp.call_to = inst.jump_to_addr
@@ -174,17 +198,20 @@ class Function:
 
 	def get_func_info(self):
 		func_info = "Function:%s Start:%s End:%s Size:%d" % (self.name, self.start, self.end, self.size)
-		for temp in list_bb:
+		for temp in self.list_bb:
 			func_info += "\n" + temp.get_bb_info()
 
 		return func_info
 
+	def get_list_bb(self):
+		return self.list_bb
+
 def output_info(func,f1):
-	file1.write("%s" % func.get_func_info)
+	f1.write("%s" % func.get_func_info())
 
 def funcDOT(func,f1,f2):
 	output_info(func, f2)
-	for temp in func.list_bb:
+	for temp in func.get_list_bb():
 		if (temp.nextbb != None):
 			f1.write("	%s -> %s\n" % (temp.name, temp.nextbb.name))
 
@@ -211,13 +238,13 @@ def generateDOT(func,file1,file2):
 
 def get_all_lables(nm): # Get all labels from .nm file and update dict_all_labels
 	for line in file(nm):
-		fileds = line.split()
+		fields = line.split()
 		if (len(fields) < 3):
 			continue
 		if line.rstrip().endswith(" T main"):
-			main_at = full_addr(fields[0])
+			main_at.append(full_addr(fields[0]))
 
-		dict_all_label[full_addr(fields[0])] = fields[-1]
+		dict_all_labels[full_addr(fields[0])] = fields[-1]
 
 def get_all_functions(od): # Get all functions from .od file and update dict_all_functions
 	flag = False
@@ -225,9 +252,15 @@ def get_all_functions(od): # Get all functions from .od file and update dict_all
 		fields = line.split()
 		if (len(fields) == 2 and len(fields[0])==8):
 			flag = True
-			assert dict_all_lables.has_key(full_addr(fields[0]))
+			assert dict_all_labels.has_key(full_addr(fields[0]))
 			func = Function(fields[1][1:-2], full_addr(fields[0]))
 			dict_all_functions[full_addr(fields[0])] = func
+			continue
+
+		if (len(fields)==0):
+			continue
+
+		if len(fields[0]) > 8:
 			continue
 
 		if flag and len(fields) >= 4:
@@ -238,14 +271,24 @@ def get_all_functions(od): # Get all functions from .od file and update dict_all
 				inst = Instruction(address, expr_hexadecimal, expr_text, func)
 				func.add_inst(inst)
 
+def update_all_functions():
+	assert len(dict_all_functions) > 0
+	for key in dict_all_functions:
+		dict_all_functions[key].create_bb()
+		dict_all_functions[key].create_links()
+
 
 if __name__ == '__main__':
-	assert len(sys.argv) == 3
-	get_all_lables(sys.argv[1])
-	print main_at
-	get_all_functions(sys.argv[2])
+	assert len(sys.argv) == 6
+	#print sys.argv[1]
+	get_all_lables(sys.argv[2])
+	assert len(main_at) == 1
+	#print main_at[0]
+	get_all_functions(sys.argv[3])
+	#print dict_all_functions
+	update_all_functions()
 
-	generateDOT(dict_all_functions[main_at], sys.argv[3], sys.argv[4])
+	generateDOT(dict_all_functions[main_at[0]], sys.argv[4], sys.argv[5])
 
 
 

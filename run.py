@@ -27,15 +27,15 @@ def build(program):
 	csystem("arm-none-linux-gnueabi-nm -aS %s.elf > %s.nm" % (ARM+program, NM+program))
 	csystem("arm-none-linux-gnueabi-objdump -d %s.elf > %s.od" % (ARM+program, OBJDUMP+program))
 
-def GenerateInlinedCFG(nm_file,ob_file):
-	csystem("python GenerateInlinedCFG %s %s %s %s" % (nm_file, ob_file, DOT, RESULT))
+def GenerateInlinedCFG(program, nm_file,ob_file, dot_file, out_file):
+	csystem("python GenerateInlinedCFG.py %s %s %s %s %s" % (program, nm_file, ob_file, dot_file, out_file))
 
 def GeneratePDF(dot_file, pdf_file):
 	csystem("dot -Tpdf %s -o %s" % (dot_file, pdf_file))
 
 if __name__ == "__main__":
 	for program in os.listdir(BENCHMARKS):
-		build(program)
-		#GenerateInlinedCFG(NM+program+".nm", OBJDUMP+program+".ob")
-		#GeneratePDF(DOT+program+".dot", PDF+program+".pdf")
+		#build(program)
+		#GenerateInlinedCFG(BENCHMARKS+program, NM+program+".nm", OBJDUMP+program+".od", DOT+program+".dot", RESULT+program+".out")
+		GeneratePDF(DOT+program+".dot", PDF+program+".pdf")
 
